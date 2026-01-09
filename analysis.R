@@ -110,4 +110,25 @@ plot(
   ylab = "Number of papers"
 )
 
+# ------------------------------------------------------------
+# Top 10 most cited papers
+# ------------------------------------------------------------
+# Keep only papers with citation data
+cit_data <- merged_data[!is.na(merged_data$TC), ]
+
+# Order by total citations (descending)
+top10_cited <- cit_data[order(-cit_data$TC), ][1:10, ]
+
+# Create readable labels (shortened titles)
+labels <- substr(top10_cited$TI, 1, 60)
+labels <- paste0(labels, ifelse(nchar(top10_cited$TI) > 60, "...", ""))
+
+# Plot histogram (bar chart)
+barplot(
+  top10_cited$TC,
+  names.arg = labels,
+  las = 2,
+  ylab = "Total citations",
+  main = "Top 10 Most Cited ASM Papers"
+)
 
