@@ -5,15 +5,21 @@
 # Load required package
 library(bibliometrix)
 
-# Set working directory to the Query folder
-# setwd("path/to/Query")  # <-- uncomment and adapt if needed
+# Utility function
+keep_with_id <- function(df) {
+  has_doi <- !is.na(df$DI) & trimws(df$DI) != ""
+  df[has_doi, , drop = FALSE]
+}
+
+# Guardiamo solo "Authors Keywords" e "Titolo", e devono avere il DOI. Quindi facciamo il merge.
+# Se hanno pagina iniziale e finale non è un book, e lo cambiamo automaticamente in Book Chapter
 
 # ------------------------------------------------------------
 # File paths
 # ------------------------------------------------------------
-lens_file   <- "./query/lens/lens-export2_filtered.csv"
-scopus_file <- "./query/scopus/scopus_export_filtered.csv"
-wos_file    <- "./query/wok/savedrecs.txt"
+lens_file   <- "./query/lens/lens-export-final.csv"
+scopus_file <- "./query/scopus/scopus-export-final.csv"
+wos_file    <- "./query/wok/wos-export-final-sanitized.txt"
 
 # ------------------------------------------------------------
 # Import datasets
@@ -25,9 +31,7 @@ lens_data <- convert2df(
   dbsource = "lens",
   format = "csv"
 )
-lens_data <- lens_data[
-  !is.na(lens_data$DI) & trimws(lens_data$DI) != "",
-]
+lens_data <- keep_with_id(lens_data)
 
 # Scopus
 scopus_data <- convert2df(
@@ -35,9 +39,7 @@ scopus_data <- convert2df(
   dbsource = "scopus",
   format = "csv"
 )
-scopus_data <- scopus_data[
-  !is.na(scopus_data$DI) & trimws(scopus_data$DI) != "",
-]
+scopus_data <- keep_with_id(scopus_data)
 
 # Web of Science (WoS)
 wos_data <- convert2df(
@@ -45,10 +47,7 @@ wos_data <- convert2df(
   dbsource = "wos",
   format = "plaintext"
 )
-wos_data <- wos_data[
-  !is.na(wos_data$DI) & trimws(wos_data$DI) != "",
-]
-
+wos_data <- keep_with_id(wos_data)
 
 # ------------------------------------------------------------
 # Basic checks
@@ -62,16 +61,18 @@ cat("WoS records:    ", nrow(wos_data), "\n")
 # ------------------------------------------------------------
 merged_data <- mergeDbSources(
   list(lens_data, scopus_data, wos_data),
-  remove.duplicated = TRUE
+  #list(scopus_data, wos_data),
+  #list(scopus_data),
+  remove.duplicated = TRUE,
+  verbose = TRUE
 )
-
-cat("Merged records:", nrow(merged_data), "\n")
 
 merged_data <- merged_data[
   !is.na(merged_data$AU) & trimws(merged_data$AU) != "",
 ]
 
 cat("Merged records after removing empty authors:", nrow(merged_data), "\n")
+saveRDS(merged_data, file = "merged_data_bibliometrix.rds")
 
 # ------------------------------------------------------------
 # Number of papers per publication type
