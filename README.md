@@ -1,1 +1,1 @@
-the data and queries for the bibliometics analysis for ASMs (EB80)
+The data and queries for the bibliometrics analysis for ASMs (EB80)
