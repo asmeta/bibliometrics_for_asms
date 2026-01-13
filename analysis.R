@@ -11,6 +11,51 @@ keep_with_id <- function(df) {
   df[has_doi, , drop = FALSE]
 }
 
+fix_borger_name <- function(M) {
+  stopifnot(is.data.frame(M), "AU" %in% names(M))
+  
+  # Work on a copy
+  AU <- M$AU
+  
+  # Skip missing entries
+  idx <- !is.na(AU) & trimws(AU) != ""
+  AU_sub <- AU[idx]
+  
+  # Normalize diacritics temporarily for matching
+  AU_norm <- iconv(AU_sub, from = "", to = "ASCII//TRANSLIT")
+  
+  # Split authors
+  authors_list <- strsplit(AU_norm, ";", fixed = TRUE)
+  
+  # Process each author string
+  authors_fixed <- lapply(authors_list, function(auths) {
+    auths <- trimws(auths)
+    
+    auths <- sapply(auths, function(a) {
+      # Match Borger variants (surname-first format)
+      if (grepl("^borger,|^boerger,", tolower(a))) {
+        # Recover initials if present
+        initials <- sub("^[^,]+,", "", a)
+        initials <- trimws(initials)
+        if (initials != "") {
+          return(paste0("Börger, ", initials))
+        } else {
+          return("Börger")
+        }
+      }
+      a
+    }, USE.NAMES = FALSE)
+    
+    paste(auths, collapse = "; ")
+  })
+  
+  # Put back into AU field
+  AU[idx] <- authors_fixed
+  M$AU <- AU
+  
+  return(M)
+}
+
 # Guardiamo solo "Authors Keywords" e "Titolo", e devono avere il DOI. Quindi facciamo il merge.
 # Se hanno pagina iniziale e finale non è un book, e lo cambiamo automaticamente in Book Chapter
 
@@ -32,6 +77,7 @@ lens_data <- convert2df(
   format = "csv"
 )
 lens_data <- keep_with_id(lens_data)
+lens_data <- fix_borger_name(lens_data)
 
 # Scopus
 scopus_data <- convert2df(
@@ -40,6 +86,7 @@ scopus_data <- convert2df(
   format = "csv"
 )
 scopus_data <- keep_with_id(scopus_data)
+scopus_data <- fix_borger_name(scopus_data)
 
 # Web of Science (WoS)
 wos_data <- convert2df(
@@ -48,6 +95,7 @@ wos_data <- convert2df(
   format = "plaintext"
 )
 wos_data <- keep_with_id(wos_data)
+wos_data <- fix_borger_name(wos_data)
 
 # ------------------------------------------------------------
 # Basic checks
@@ -132,3 +180,72 @@ barplot(
   main = "Top 10 Most Cited ASM Papers"
 )
 
+# ------------------------------------------------------------
+# Top-5 authors -- No. Documents
+# ------------------------------------------------------------
+
+# 1) Get all author strings, drop missing
+au <- merged_data$AU
+au <- au[!is.na(au) & trimws(au) != ""]
+
+# 2) Split authors (bibliometrix uses ';' as separator)
+authors <- unlist(strsplit(au, ";", fixed = TRUE))
+authors <- trimws(authors)
+authors <- authors[authors != ""]
+
+authors_norm <- iconv(authors, from = "", to = "ASCII//TRANSLIT")
+author_counts <- sort(table(authors_norm), decreasing = TRUE)
+top5 <- head(author_counts, 5)
+
+barplot(as.numeric(top5), names.arg = names(top5), las = 2,
+        ylab = "Number of contributions",
+        main = "Top 5 Authors by Number of Contributions")
+
+# ------------------------------------------------------------
+# Top-5 authors -- Citations
+# ------------------------------------------------------------
+
+top_cited_authors <- function(M, k = 5, sep = ";") {
+  stopifnot(is.data.frame(M), "AU" %in% names(M), "TC" %in% names(M))
+  
+  # Keep only rows with authors + citation counts
+  M <- M[!is.na(M$AU) & trimws(M$AU) != "" & !is.na(M$TC), , drop = FALSE]
+  
+  # Split authors for each paper
+  AU_list <- strsplit(M$AU, split = sep, fixed = TRUE)
+  
+  # Build an expanded table: one row per (paper, author)
+  author <- trimws(unlist(AU_list))
+  tc     <- rep(M$TC, times = lengths(AU_list))
+  
+  # Drop empty author tokens if any
+  keep <- author != "" & !is.na(author)
+  author <- author[keep]
+  tc <- tc[keep]
+  
+  # Aggregate: total citations + number of papers per author
+  df <- data.frame(Author = author, TC = tc, stringsAsFactors = FALSE)
+  
+  total_cit <- aggregate(TC ~ Author, data = df, sum)
+  n_papers  <- aggregate(TC ~ Author, data = df, length)
+  names(n_papers)[2] <- "Papers"
+  
+  out <- merge(total_cit, n_papers, by = "Author")
+  out <- out[order(-out$TC, -out$Papers, out$Author), , drop = FALSE]
+  
+  head(out, k)
+}
+
+# Usage
+top5_authors <- top_cited_authors(merged_data, k = 5)
+print(top5_authors)
+
+# ------------------------------------------------------------
+# Top-5 authors -- Production over time
+# ------------------------------------------------------------
+
+authorProdOverTime(
+  M = merged_data,
+  k = 5,
+  graph = TRUE
+)
