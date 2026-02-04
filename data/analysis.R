@@ -62,9 +62,9 @@ fix_borger_name <- function(M) {
 # ------------------------------------------------------------
 # File paths
 # ------------------------------------------------------------
-lens_file   <- "./query/lens/lens-export-final.csv"
-scopus_file <- "./query/scopus/scopus-export-final.csv"
-wos_file    <- "./query/wok/wos-export-final-sanitized.txt"
+lens_file   <- "../query/lens/lens-export-final.csv"
+scopus_file <- "../query/scopus/scopus-export-final.csv"
+wos_file    <- "../query/wok/wos-export-final-sanitized.txt"
 
 # ------------------------------------------------------------
 # Import datasets
@@ -249,3 +249,93 @@ authorProdOverTime(
   k = 5,
   graph = TRUE
 )
+
+# ------------------------------------------------------------
+# Top-10 keywords + keyword usage over time
+# ------------------------------------------------------------
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stringr)
+
+# --- quick sanity checks ---
+cat("Rows merged_data:", nrow(merged_data), "\n")
+cat("Has PY:", "PY" %in% names(merged_data), "\n")
+cat("Has DE:", "DE" %in% names(merged_data), "\n")
+cat("Non-empty DE rows:", sum(!is.na(merged_data$DE) & str_trim(merged_data$DE) != ""), "\n")
+
+# If DE is missing or empty, try ID (Keywords Plus)
+kw_col <- if ("DE" %in% names(merged_data) && sum(!is.na(merged_data$DE) & str_trim(merged_data$DE) != "") > 0) {
+  "DE"
+} else if ("ID" %in% names(merged_data) && sum(!is.na(merged_data$ID) & str_trim(merged_data$ID) != "") > 0) {
+  cat("Using ID instead of DE (DE missing/empty).\n")
+  "ID"
+} else {
+  stop("No usable keyword column found: both DE and ID are missing or empty.")
+}
+
+# --- extract keywords ---
+kw_df <- merged_data %>%
+  select(PY, DE) %>%
+  filter(!is.na(PY), !is.na(DE), str_trim(DE) != "") %>%
+  mutate(Keyword = strsplit(DE, ";", fixed = TRUE)) %>%
+  unnest(Keyword) %>%
+  mutate(
+    Keyword = str_trim(Keyword),
+    Keyword = tolower(Keyword),
+    # normalize punctuation so "asm.", "asm," etc get caught
+    Keyword_norm = str_replace_all(Keyword, "[^a-z0-9\\s]+", ""),
+    Keyword_norm = str_squish(Keyword_norm)
+  ) %>%
+  filter(Keyword_norm != "") %>%
+  # EXCLUDE these keywords
+  filter(!Keyword_norm %in% c(
+    "abstract state machines",
+    "abstract state machine",
+    "asm"
+  ))
+
+cat("Total keyword tokens:", nrow(kw_df), "\n")
+
+# 2) Thesaurus: group keywords (edit/extend these rules)
+kw_df <- kw_df %>%
+  mutate(
+    Keyword_group = case_when(
+      # verification grouping (your example)
+      Keyword_norm %in% c("formal verification", "verification", "model checking") ~ "verification",
+      Keyword_norm %in% c("operational semantics", "semantics", "formal semantics") ~ "semantics",
+      Keyword_norm %in% c("theory", "behavioural theory") ~ "theory",
+      
+      TRUE ~ Keyword_norm
+    )
+  )
+
+# 3) Top 10 overall (after grouping)
+top10_kw <- kw_df %>%
+  count(Keyword_group, sort = TRUE) %>%
+  slice_head(n = 10)
+
+# 4) Usage over time
+kw_time <- kw_df %>%
+  semi_join(top10_kw, by = "Keyword_group") %>%
+  count(PY, Keyword_group, name = "n") %>%
+  complete(PY, Keyword_group, fill = list(n = 0)) %>%
+  mutate(
+    PY = as.integer(PY),
+    Keyword_group = factor(Keyword_group, levels = rev(top10_kw$Keyword_group))
+  )
+
+# 5) Plot (darker = higher usage)
+p <- ggplot(kw_time, aes(x = PY, y = Keyword_group, fill = n)) +
+  geom_tile(color = "white", linewidth = 0.3) +
+  scale_x_continuous(breaks = sort(unique(kw_time$PY))) +
+  scale_fill_gradient(low = "white", high = "navy", name = "Occurrences") +
+  labs(
+    title = "Top 10 grouped keywords: usage over time",
+    x = "Year",
+    y = "Keyword (grouped)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p)
