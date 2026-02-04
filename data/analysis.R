@@ -302,7 +302,7 @@ kw_df <- kw_df %>%
   mutate(
     Keyword_group = case_when(
       # verification grouping (your example)
-      Keyword_norm %in% c("formal verification", "verification", "model checking") ~ "verification",
+      Keyword_norm %in% c("formal verification", "verification") ~ "verification",
       Keyword_norm %in% c("operational semantics", "semantics", "formal semantics") ~ "semantics",
       Keyword_norm %in% c("theory", "behavioural theory") ~ "theory",
       
