@@ -316,19 +316,26 @@ top10_kw <- kw_df %>%
   slice_head(n = 10)
 
 # 4) Usage over time
+# Make an explicit full year range (so missing years still appear)
+all_years <- seq(min(merged_data$PY, na.rm = TRUE),
+                 max(merged_data$PY, na.rm = TRUE),
+                 by = 1)
+
 kw_time <- kw_df %>%
   semi_join(top10_kw, by = "Keyword_group") %>%
   count(PY, Keyword_group, name = "n") %>%
-  complete(PY, Keyword_group, fill = list(n = 0)) %>%
+  # Force all (year, keyword) combinations, including years with no papers
+  complete(PY = all_years, Keyword_group, fill = list(n = 0)) %>%
   mutate(
     PY = as.integer(PY),
     Keyword_group = factor(Keyword_group, levels = rev(top10_kw$Keyword_group))
   )
 
-# 5) Plot (darker = higher usage)
 p <- ggplot(kw_time, aes(x = PY, y = Keyword_group, fill = n)) +
   geom_tile(color = "white", linewidth = 0.3) +
-  scale_x_continuous(breaks = sort(unique(kw_time$PY))) +
+  # show ALL years as labels (even those with no data)
+  scale_x_continuous(breaks = all_years, expand = c(0, 0)) +
+  # 0 occurrences = white; higher = darker
   scale_fill_gradient(low = "white", high = "navy", name = "Occurrences") +
   labs(
     title = "Top 10 grouped keywords: usage over time",
@@ -336,6 +343,10 @@ p <- ggplot(kw_time, aes(x = PY, y = Keyword_group, fill = n)) +
     y = "Keyword (grouped)"
   ) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background  = element_rect(fill = "white", color = NA),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
 
 print(p)
